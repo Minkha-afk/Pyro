@@ -5,6 +5,11 @@ const VOICE_ID = "cgSgspJ2msm6clMCkdW9";
 
 export interface TTSOptions {
   language?: string; // BCP-47 code e.g. "en", "hi", "as", "bn"
+  /**
+   * Max characters to synthesise. Defaults to full text (no cap).
+   * Set to 300 for a quick summary, leave undefined for full medical explanation.
+   */
+  maxChars?: number;
 }
 
 /**
@@ -54,6 +59,7 @@ export async function generateAudio(
           similarity_boost: 0.90,
           style: 0.0,
           use_speaker_boost: true,
+          speed: 1.2,
         },
       }),
     }
