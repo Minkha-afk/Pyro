@@ -24,7 +24,7 @@ export type TtsRequest = {
 
 /**
  * Fetch TTS audio as an MP3 Blob.
- * - language === "as" (Assamese) → POST /api/elevenlabs/tts
+ * - language === "as" (Assamese) → POST /api/elevenlabs
  * - everything else              → POST /api/tts  (Python edge-tts)
  */
 export async function fetchTtsMp3(request: TtsRequest): Promise<Blob> {

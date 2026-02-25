@@ -1,12 +1,25 @@
 'use client'
 import { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Upload, CheckCircle, AlertCircle, FileText, Stethoscope, Volume2, Loader2, ShieldAlert, Shield } from 'lucide-react'
+import { X, Upload, CheckCircle, AlertCircle, Image as ImageIcon, FileText, Volume2, Loader2, Download } from 'lucide-react'
 import DragDropZone from './DragDropZone'
 import FileList from './FileList'
-import { analyzeMedicalDocument, analyzeMedicalInsuranceDocs } from '@/lib/actions'
-import { SUPPORTED_LANGUAGES } from '@/lib/elevenlabs'
+import { analyzeFoodLabel, analyzeMedicalInsuranceDocs } from '@/lib/actions'
 import { fetchTtsMp3 } from '@/utils/tts'
+
+/* ── Supported languages ─────────────────────────────── */
+const SUPPORTED_LANGUAGES = [
+  { code: 'en', label: 'English' },
+  { code: 'hi', label: 'Hindi' },
+  { code: 'as', label: 'Assamese (ElevenLabs)' },
+  { code: 'bn', label: 'Bengali' },
+  { code: 'ta', label: 'Tamil' },
+  { code: 'te', label: 'Telugu' },
+  { code: 'kn', label: 'Kannada' },
+  { code: 'mr', label: 'Marathi' },
+  { code: 'gu', label: 'Gujarati' },
+  { code: 'pa', label: 'Punjabi' },
+] as const
 
 interface DragDropModalProps {
   isOpen: boolean
@@ -101,8 +114,8 @@ export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
   const [showResults, setShowResults] = useState(false)
   const [isDragActive, setIsDragActive] = useState(false)
   const [language, setLanguage] = useState('en')
-  const [context, setContext] = useState('')
-  const [privacyAck, setPrivacyAck] = useState(false)
+
+  // Single combined audio player state
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false)
   const [ttsError, setTtsError] = useState<string | null>(null)
@@ -118,11 +131,39 @@ export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
     setUploadedFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
+  /** Generate a single MP3 from all successful analysis texts */
+  const generateAudio = async (results: AnalysisResult[]) => {
+    const combinedText = results
+      .filter((r) => r.success && r.analysis)
+      .map((r) => r.analysis)
+      .join('\n\n')
+
+    if (!combinedText.trim()) return
+
+    setIsGeneratingAudio(true)
+    setTtsError(null)
+
+    try {
+      const blob = await fetchTtsMp3({ text: combinedText, language })
+      const url = URL.createObjectURL(blob)
+      setAudioUrl(url)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to generate audio'
+      setTtsError(msg)
+    } finally {
+      setIsGeneratingAudio(false)
+    }
+  }
+
   const handleAnalyze = async () => {
     if (uploadedFiles.length === 0 || !privacyAck) return
 
     setIsLoading(true)
     try {
+      // Clean up previous audio
+      if (audioUrl) { URL.revokeObjectURL(audioUrl); setAudioUrl(null) }
+      setTtsError(null)
+
       const formData = new FormData()
       uploadedFiles.forEach((file) => {
         formData.append('files', file)
@@ -138,6 +179,8 @@ export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
       if (response.success && response.data) {
         setAnalysisResults(response.data)
         setShowResults(true)
+        // Fire TTS generation in the background
+        void generateAudio(response.data)
       } else {
         setAnalysisResults([{
           fileName: 'Error',
@@ -170,14 +213,13 @@ export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
   }
 
   const handleReset = () => {
+    if (audioUrl) URL.revokeObjectURL(audioUrl)
+    setAudioUrl(null)
+    setTtsError(null)
+    setIsGeneratingAudio(false)
     setUploadedFiles([])
     setAnalysisResults([])
     setShowResults(false)
-    setAudioUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null })
-    setTtsError(null)
-    setIsGeneratingAudio(false)
-    setContext('')
-    setPrivacyAck(false)
   }
 
   const handleTabChange = (tab: TabType) => {
@@ -270,12 +312,36 @@ export default function DragDropModal({ isOpen, onClose }: DragDropModalProps) {
                       Explanation Results
                     </h3>
 
-                    {/* Prominent disclaimer */}
-                    <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                      <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
-                      <p className="text-xs text-amber-800">
-                        <strong>Not medical advice.</strong> Always consult your doctor before taking any action.
-                      </p>
+                    {/* Combined audio player */}
+                    <div className="flex flex-col gap-2 p-3 bg-lime-50 border border-lime-200 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Volume2 className="w-5 h-5 text-lime-600 shrink-0" />
+                        {isGeneratingAudio && (
+                          <div className="flex items-center gap-2 text-sm text-lime-700">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Generating voice preview ({language === 'as' ? 'ElevenLabs' : 'edge-tts'})…
+                          </div>
+                        )}
+                        {!isGeneratingAudio && audioUrl && (
+                          <audio controls src={audioUrl} className="flex-1 h-8" />
+                        )}
+                        {!isGeneratingAudio && !audioUrl && !ttsError && (
+                          <span className="text-sm text-lime-600">No audio generated</span>
+                        )}
+                        {ttsError && (
+                          <span className="text-sm text-red-600">{ttsError}</span>
+                        )}
+                      </div>
+                      {!isGeneratingAudio && audioUrl && (
+                        <a
+                          href={audioUrl}
+                          download="analysis.mp3"
+                          className="inline-flex items-center gap-2 self-start px-4 py-1.5 text-sm font-semibold rounded-lg bg-lime-400 text-black hover:bg-lime-500 transition-colors"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download MP3
+                        </a>
+                      )}
                     </div>
 
                     {/* Audio player — manual trigger */}

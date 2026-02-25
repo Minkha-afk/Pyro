@@ -1,4 +1,4 @@
-const API_KEY = process.env.ELEVENLABS_API_KEY;
+const API_KEY = "sk_9b4004b082fd8c51e021ea89f3fb84c600045cc28780079f";
 
 // Hardcoded voice ID per project requirement
 const VOICE_ID = "cgSgspJ2msm6clMCkdW9";
@@ -15,8 +15,6 @@ export interface TTSOptions {
 /**
  * Calls ElevenLabs TTS API and returns raw audio as a Buffer.
  * No disk I/O — caller decides how to use the buffer.
- *
- * Only the first 100 characters of text will be synthesised (testing limit).
  */
 export async function generateAudio(
   text: string,
@@ -27,16 +25,21 @@ export async function generateAudio(
   }
 
   const trimmedKey = API_KEY.trim();
-
-  // Use maxChars if provided, otherwise send the full text.
-  const rawText = options.maxChars ? text.slice(0, options.maxChars) : text;
-  const trimmedText = rawText.trim();
+  const trimmedText = text.trim();
 
   if (!trimmedText) {
-    throw new Error("Text is empty after trimming to 100 characters");
+    throw new Error("Text is empty");
   }
 
   const language = options.language ?? "en";
+
+  // ElevenLabs character-limit safeguard for Assamese only.
+  // Keep other languages untrimmed.
+  const ELEVENLABS_ASSAMESE_MAX_CHARS = 500;
+  const textForTts =
+    language === "as" && trimmedText.length > ELEVENLABS_ASSAMESE_MAX_CHARS
+      ? trimmedText.slice(0, ELEVENLABS_ASSAMESE_MAX_CHARS)
+      : trimmedText;
 
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
@@ -48,7 +51,7 @@ export async function generateAudio(
         "xi-api-key": trimmedKey,
       },
       body: JSON.stringify({
-        text: trimmedText,
+        text: textForTts,
         model_id: "eleven_v3",
         language_code: language,
         voice_settings: {
